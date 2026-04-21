@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Python cache/build files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Local packaged artifacts
+*.zip
+*.pkg
+
+# Lambda layer / vendored dependency build outputs
+annotation/
+annotation 2/
+thumbnail/
+
+# Local environment and secret files
+.env
+*.pem
+*.key

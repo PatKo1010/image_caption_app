@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ASG and ALB stack using existing VPC and subnets
+
+Parameters:
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID of the existing VPC
+
+  PublicSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet for ALB and ASG
+  
+  PublicSubnetId2:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public subnet for ALB and ASG
+
+  InstanceSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group for EC2 instances
+  RdsEc2SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group for rds ec2 instances
+  ALBSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group for ALB
+
+Resources:
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: t2.micro
+        KeyName: vockey
+        ImageId: ami-0c895f511524479bb  # Replace with correct AMI for your region
+        SecurityGroupIds:
+          - !Ref InstanceSecurityGroupId
+          - !Ref RdsEc2SecurityGroupId
+        IamInstanceProfile:
+          Name: LabInstanceProfile
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            cd /home/ec2-user/environment/Image-caption-app-V1.1
+            sudo yum update -y
+            sudo yum install python3-pip -y
+            pip3 install flask boto3 mysql-connector-python werkzeug
+            nohup python3 app.py > app.log 2>&1 &
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets: 
+        - !Ref PublicSubnetId
+        - !Ref PublicSubnetId2
+      SecurityGroups: [!Ref ALBSecurityGroupId]
+      Scheme: internet-facing
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPCId
+      Port: 5000
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /gallery
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetId
+        - !Ref PublicSubnetId2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+    
+
+Outputs:
+  LoadBalancerURL:
+    Value: !GetAtt ALB.DNSName

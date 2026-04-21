@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates Lambda functions and adds image-only S3 triggers
+
+Parameters:
+  LambdaExecutionRoleArn:
+    Type: String
+    Description: IAM Role ARN for the Lambda functions
+  CodeBucket:
+    Type: String
+    Description: S3 bucket where the zip files are stored
+  AnnotationZipKey:
+    Type: String
+    Default: annotation.zip
+  ThumbnailZipKey:
+    Type: String
+    Default: thumbnail.zip
+
+Resources:
+  ### Annotation Lambda ###
+  AnnotationLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: AnnotationLambdaFunction
+      Handler: annotation.annotation.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Runtime: python3.9
+      Timeout: 60
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref AnnotationZipKey
+
+  ### Thumbnail Lambda ###
+  ThumbnailLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: ThumbnailLambdaFunction
+      Handler: thumbnail.thumbnail.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Runtime: python3.9
+      Timeout: 60
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref ThumbnailZipKey
+
+  ### Allow S3 to invoke Annotation Lambda ###
+  AnnotationInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AnnotationLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !ImportValue ImageUploadBucketArn
+
+  ### Allow S3 to invoke Thumbnail Lambda ###
+  ThumbnailInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ThumbnailLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !ImportValue ImageUploadBucketArn
+
+Outputs:
+  AnnotationLambdaArn:
+    Value: !GetAtt AnnotationLambdaFunction.Arn
+  ThumbnailLambdaArn:
+    Value: !GetAtt ThumbnailLambdaFunction.Arn
+
+

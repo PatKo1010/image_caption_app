@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Image Captioning App with EC2, ALB, Lambda, S3, and RDS in private subnet
+
+Parameters:
+  DBUsername:
+    Type: String
+    NoEcho: true
+  DBPassword:
+    Type: String
+    NoEcho: true
+
+
+Resources:
+   ### VPC and Subnets ###
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningVPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet1
+
+  # PrivateSubnet2:
+  #   Type: AWS::EC2::Subnet
+  #   Properties:
+  #     VpcId: !Ref VPC
+  #     CidrBlock: 10.0.3.0/24
+  #     AvailabilityZone: !Select [2, !GetAZs '']
+  #     Tags:
+  #       - Key: Name
+  #         Value: PrivateSubnet2
+
+  ### Security Groups ###
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 Web Access
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: EC2InstanceSecurityGroup
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS access from EC2
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref InstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: RDSSecurityGroup
+
+  # ### RDS Subnet Group ###
+  # RDSSubnetGroup:
+  #   Type: AWS::RDS::DBSubnetGroup
+  #   Properties:
+  #     DBSubnetGroupDescription: RDS private subnet group
+  #     SubnetIds:
+  #       - !Ref PrivateSubnet
+  #       # - !Ref PrivateSubnet2
+
+  ### RDS Instance ###
+  # MySQLDatabase:
+  #   Type: AWS::RDS::DBInstance
+  #   Properties:
+  #     DBName: image_caption_db
+  #     Engine: mysql
+  #     DBInstanceClass: db.t3.micro
+  #     AllocatedStorage: 20
+  #     MasterUsername: !Ref DBUsername
+  #     MasterUserPassword: !Ref DBPassword
+  #     DBSubnetGroupName: !Ref RDSSubnetGroup
+  #     VPCSecurityGroups: [!Ref RDSSecurityGroup]
+  #     MultiAZ: false  
+  #     PubliclyAccessible: false
+  #     Tags:
+  #       - Key: Name
+  #         Value: ImageCaptioningRDS
+
+  ### S3 Bucket ###
+  ImageBucket:
+    Type: AWS::S3::Bucket
+
+Outputs:
+  # RDSIdentifier:
+  #   Value: !Ref MySQLDatabase
+  BucketName:
+    Value: !Ref ImageBucket
