@@ -32,30 +32,30 @@ from logging.handlers import RotatingFileHandler
 import os
 
 # Configure Gemini API, REPLACE with your Gemini API key
-# GOOGLE_API_KEY = ""
-# genai.configure(api_key=GOOGLE_API_KEY)
+GOOGLE_API_KEY = ""
+genai.configure(api_key=GOOGLE_API_KEY)
 
 # Choose a Gemini model for generating captions
-# model = genai.GenerativeModel(model_name="gemini-2.0-pro-exp-02-05")
+model = genai.GenerativeModel(model_name="gemini-2.0-pro-exp-02-05")
 
-# def generate_image_caption(image_data):
-#     """
-#     Generate a caption for an uploaded image using the Gemini API.
+def generate_image_caption(image_data):
+    """
+    Generate a caption for an uploaded image using the Gemini API.
 
-#     :param image_data: Raw binary image data
-#     :return: Generated caption or error message
-#     """
-#     try:
-#         encoded_image = base64.b64encode(image_data).decode("utf-8")
-#         response = model.generate_content(
-#             [
-#                 {"mime_type": "image/jpeg", "data": encoded_image},
-#                 "Caption this image.",
-#             ]
-#         )
-#         return response.text if response.text else "No caption generated."
-#     except Exception as e:
-#         return f"Error: {str(e)}"
+    :param image_data: Raw binary image data
+    :return: Generated caption or error message
+    """
+    try:
+        encoded_image = base64.b64encode(image_data).decode("utf-8")
+        response = model.generate_content(
+            [
+                {"mime_type": "image/jpeg", "data": encoded_image},
+                "Caption this image.",
+            ]
+        )
+        return response.text if response.text else "No caption generated."
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 # Flask app setup
 app = Flask(__name__)
