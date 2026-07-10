@@ -18,5 +18,6 @@ thumbnail/
 
 # Local environment and secret files
 .env
+config.py
 *.pem
 *.key

@@ -31,12 +31,25 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
+try:
+    import config
+except ModuleNotFoundError:
+    config = None
+
+
+def get_config_value(name, default=""):
+    """Read config from environment first, then config.py."""
+    if name in os.environ:
+        return os.environ[name]
+    return getattr(config, name, default)
+
 # Configure Gemini API, REPLACE with your Gemini API key
-GOOGLE_API_KEY = ""
+GOOGLE_API_KEY = get_config_value("GOOGLE_API_KEY")
+GEMINI_MODEL = get_config_value("GEMINI_MODEL", "gemini-2.0-pro-exp-02-05")
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Choose a Gemini model for generating captions
-model = genai.GenerativeModel(model_name="gemini-2.0-pro-exp-02-05")
+model = genai.GenerativeModel(model_name=GEMINI_MODEL)
 
 def generate_image_caption(image_data):
     """
@@ -60,12 +73,14 @@ def generate_image_caption(image_data):
 # Flask app setup
 app = Flask(__name__)
 
-LOG_FILE = os.environ.get("APP_LOG_FILE", "logs/app.log")
+LOG_FILE = get_config_value("APP_LOG_FILE", "logs/app.log")
 
 
 def configure_logging():
     """Configure app logs for local review on EC2."""
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    log_dir = os.path.dirname(LOG_FILE)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
 
     file_handler = RotatingFileHandler(
         LOG_FILE,
@@ -90,8 +105,8 @@ def configure_logging():
 configure_logging()
 
 # AWS S3 Configuration, REPLACE with your S3 bucket
-S3_BUCKET = ""
-S3_REGION = "us-east-1"
+S3_BUCKET = get_config_value("S3_BUCKET")
+S3_REGION = get_config_value("S3_REGION", "us-east-1")
 
 
 def get_s3_client():
@@ -99,10 +114,10 @@ def get_s3_client():
     return boto3.client("s3", region_name=S3_REGION)
 
 # Database Configuration, REPLACE with your RDS credentials
-DB_HOST = ""
-DB_NAME = "image_caption_db"
-DB_USER = ""
-DB_PASSWORD = ""
+DB_HOST = get_config_value("DB_HOST")
+DB_NAME = get_config_value("DB_NAME", "image_caption_db")
+DB_USER = get_config_value("DB_USER")
+DB_PASSWORD = get_config_value("DB_PASSWORD")
 
 def get_db_connection():
     """
