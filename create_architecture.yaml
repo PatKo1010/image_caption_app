@@ -5,9 +5,13 @@ Parameters:
   DBUsername:
     Type: String
     NoEcho: true
+    MinLength: 1
+    Description: Master username for the RDS MySQL database
   DBPassword:
     Type: String
     NoEcho: true
+    MinLength: 8
+    Description: Master password for the RDS MySQL database
 
 
 Resources:
@@ -41,15 +45,15 @@ Resources:
         - Key: Name
           Value: PrivateSubnet1
 
-  # PrivateSubnet2:
-  #   Type: AWS::EC2::Subnet
-  #   Properties:
-  #     VpcId: !Ref VPC
-  #     CidrBlock: 10.0.3.0/24
-  #     AvailabilityZone: !Select [2, !GetAZs '']
-  #     Tags:
-  #       - Key: Name
-  #         Value: PrivateSubnet2
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: PrivateSubnet2
 
   ### Security Groups ###
   InstanceSecurityGroup:
@@ -88,39 +92,53 @@ Resources:
         - Key: Name
           Value: RDSSecurityGroup
 
-  # ### RDS Subnet Group ###
-  # RDSSubnetGroup:
-  #   Type: AWS::RDS::DBSubnetGroup
-  #   Properties:
-  #     DBSubnetGroupDescription: RDS private subnet group
-  #     SubnetIds:
-  #       - !Ref PrivateSubnet
-  #       # - !Ref PrivateSubnet2
+  ### RDS Subnet Group ###
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: RDS private subnet group
+      SubnetIds:
+        - !Ref PrivateSubnet
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningRDSSubnetGroup
 
   ### RDS Instance ###
-  # MySQLDatabase:
-  #   Type: AWS::RDS::DBInstance
-  #   Properties:
-  #     DBName: image_caption_db
-  #     Engine: mysql
-  #     DBInstanceClass: db.t3.micro
-  #     AllocatedStorage: 20
-  #     MasterUsername: !Ref DBUsername
-  #     MasterUserPassword: !Ref DBPassword
-  #     DBSubnetGroupName: !Ref RDSSubnetGroup
-  #     VPCSecurityGroups: [!Ref RDSSecurityGroup]
-  #     MultiAZ: false  
-  #     PubliclyAccessible: false
-  #     Tags:
-  #       - Key: Name
-  #         Value: ImageCaptioningRDS
+  MySQLDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBName: image_caption_db
+      Engine: mysql
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      StorageType: gp2
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      MultiAZ: false
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 0
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningRDS
 
   ### S3 Bucket ###
   ImageBucket:
     Type: AWS::S3::Bucket
 
 Outputs:
-  # RDSIdentifier:
-  #   Value: !Ref MySQLDatabase
   BucketName:
     Value: !Ref ImageBucket
+  RDSIdentifier:
+    Value: !Ref MySQLDatabase
+  RDSEndpoint:
+    Value: !GetAtt MySQLDatabase.Endpoint.Address
+  RDSPort:
+    Value: !GetAtt MySQLDatabase.Endpoint.Port
+  RDSSecurityGroupId:
+    Value: !Ref RDSSecurityGroup
