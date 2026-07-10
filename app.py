@@ -187,7 +187,8 @@ def upload_image():
             return render_template("upload.html", error=f"S3 Upload Error: {str(e)}")
 
         # Generate caption
-        # caption = generate_image_caption(file_data)
+        caption = generate_image_caption(file_data)
+        app.logger.info(f"caption:{caption}")
 
         # Save metadata to the database
         try:
