@@ -27,6 +27,9 @@ from werkzeug.utils import secure_filename  # Secure filename handling
 import google.generativeai as genai  # Gemini API for image captioning
 import base64  # Encoding image data for API processing
 from io import BytesIO  # Handling in-memory file objects
+import logging
+from logging.handlers import RotatingFileHandler
+import os
 
 # Configure Gemini API, REPLACE with your Gemini API key
 # GOOGLE_API_KEY = ""
@@ -57,6 +60,35 @@ from io import BytesIO  # Handling in-memory file objects
 # Flask app setup
 app = Flask(__name__)
 
+LOG_FILE = os.environ.get("APP_LOG_FILE", "logs/app.log")
+
+
+def configure_logging():
+    """Configure app logs for local review on EC2."""
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+    file_handler = RotatingFileHandler(
+        LOG_FILE,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=5,
+    )
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+        )
+    )
+
+    app.logger.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+
+
+configure_logging()
+
 # AWS S3 Configuration, REPLACE with your S3 bucket
 S3_BUCKET = ""
 S3_REGION = "us-east-1"
@@ -84,7 +116,7 @@ def get_db_connection():
         )
         return connection
     except mysql.connector.Error as err:
-        print("Error connecting to database:", err)
+        app.logger.exception("Error connecting to database: %s", err)
         return None
 
 # Allowed file types for upload
@@ -103,6 +135,27 @@ def allowed_file(filename):
 def upload_form():
     """Render the homepage with the file upload form."""
     return render_template("index.html")
+
+
+@app.before_request
+def log_request_start():
+    app.logger.info(
+        "Request started: %s %s from %s",
+        request.method,
+        request.path,
+        request.remote_addr,
+    )
+
+
+@app.after_request
+def log_request_end(response):
+    app.logger.info(
+        "Request finished: %s %s -> %s",
+        request.method,
+        request.path,
+        response.status_code,
+    )
+    return response
 
 @app.route("/upload", methods=["GET", "POST"])
 def upload_image():
@@ -130,6 +183,7 @@ def upload_image():
             s3 = get_s3_client()  # Get a fresh S3 client
             s3.upload_fileobj(BytesIO(file_data), S3_BUCKET, filename)
         except Exception as e:
+            app.logger.exception("S3 upload failed for %s", filename)
             return render_template("upload.html", error=f"S3 Upload Error: {str(e)}")
 
         # Generate caption
@@ -148,6 +202,7 @@ def upload_image():
             connection.commit()
             connection.close()
         except Exception as e:
+            app.logger.exception("Database insert failed for %s", filename)
             return render_template("upload.html", error=f"Database Error: {str(e)}")
 
         # Prepare image for frontend display using Base64 encoding
@@ -193,6 +248,7 @@ def gallery():
         return render_template("gallery.html", images=images_with_captions)
 
     except Exception as e:
+        app.logger.exception("Gallery query failed")
         return render_template("gallery.html", error=f"Database Error: {str(e)}")
 
 if __name__ == "__main__":
