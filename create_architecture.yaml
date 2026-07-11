@@ -12,7 +12,20 @@ Parameters:
     NoEcho: true
     MinLength: 8
     Description: Master password for the RDS MySQL database
+  InternetGatewayId:
+    Type: String
+    Default: ""
+    Description: Existing Internet Gateway attached to the VPC
+  CreateInternetGateway:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Set to true only when CloudFormation should create and attach a new Internet Gateway
 
+Conditions:
+  ShouldCreateInternetGateway: !Equals [!Ref CreateInternetGateway, "true"]
 
 Resources:
    ### VPC and Subnets ###
@@ -55,6 +68,87 @@ Resources:
         - Key: Name
           Value: PrivateSubnet2
 
+  ### Internet Access and NAT ###
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: ShouldCreateInternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningIGW
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: ShouldCreateInternetGateway
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningPublicRouteTable
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !If [ShouldCreateInternetGateway, !Ref InternetGateway, !Ref InternetGatewayId]
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningNatEIP
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningNatGateway
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ImageCaptioningPrivateRouteTable
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
   ### Security Groups ###
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -78,6 +172,18 @@ Resources:
         - Key: Name
           Value: EC2InstanceSecurityGroup
 
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Lambda outbound access and RDS client access
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: LambdaSecurityGroup
+
   RDSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -88,6 +194,10 @@ Resources:
           FromPort: 3306
           ToPort: 3306
           SourceSecurityGroupId: !Ref InstanceSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
       Tags:
         - Key: Name
           Value: RDSSecurityGroup
@@ -130,10 +240,31 @@ Resources:
   ### S3 Bucket ###
   ImageBucket:
     Type: AWS::S3::Bucket
+    Properties:
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: ["PUT", "POST", "GET"]
+            AllowedOrigins: ["*"]
+            MaxAge: 3000
 
 Outputs:
+  VPCId:
+    Value: !Ref VPC
+  PublicSubnetId:
+    Value: !Ref PublicSubnet
+  PrivateSubnetId:
+    Value: !Ref PrivateSubnet
+  PrivateSubnet2Id:
+    Value: !Ref PrivateSubnet2
   BucketName:
     Value: !Ref ImageBucket
+    Export:
+      Name: ImageUploadBucketName
+  BucketArn:
+    Value: !GetAtt ImageBucket.Arn
+    Export:
+      Name: ImageUploadBucketArn
   RDSIdentifier:
     Value: !Ref MySQLDatabase
   RDSEndpoint:
@@ -142,3 +273,7 @@ Outputs:
     Value: !GetAtt MySQLDatabase.Endpoint.Port
   RDSSecurityGroupId:
     Value: !Ref RDSSecurityGroup
+  LambdaSecurityGroupId:
+    Value: !Ref LambdaSecurityGroup
+  NatGatewayId:
+    Value: !Ref NatGateway

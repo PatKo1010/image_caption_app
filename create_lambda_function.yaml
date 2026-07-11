@@ -8,6 +8,37 @@ Parameters:
   CodeBucket:
     Type: String
     Description: S3 bucket where the zip files are stored
+  ImageBucketName:
+    Type: String
+    Description: S3 bucket that stores uploaded images and invokes the Lambda functions
+  AnnotationSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnet IDs for the annotation Lambda
+  AnnotationSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group ID for the annotation Lambda
+  DBHost:
+    Type: String
+    Description: RDS MySQL endpoint used by the annotation Lambda
+  DBName:
+    Type: String
+    Default: image_caption_db
+    Description: RDS MySQL database name
+  DBUser:
+    Type: String
+    Description: RDS MySQL username
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: RDS MySQL password
+  GoogleApiKey:
+    Type: String
+    NoEcho: true
+    Description: Gemini API key used by the annotation Lambda
+  GeminiModel:
+    Type: String
+    Default: gemini-2.0-pro-exp-02-05
+    Description: Gemini model name used by the annotation Lambda
   AnnotationZipKey:
     Type: String
     Default: annotation.zip
@@ -21,26 +52,41 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: AnnotationLambdaFunction
-      Handler: annotation.annotation.lambda_handler
+      Handler: annotation.lambda_handler
       Role: !Ref LambdaExecutionRoleArn
       Runtime: python3.9
       Timeout: 60
       Code:
         S3Bucket: !Ref CodeBucket
         S3Key: !Ref AnnotationZipKey
+      Environment:
+        Variables:
+          DB_HOST: !Ref DBHost
+          DB_NAME: !Ref DBName
+          DB_USER: !Ref DBUser
+          DB_PASSWORD: !Ref DBPassword
+          GOOGLE_API_KEY: !Ref GoogleApiKey
+          GEMINI_MODEL: !Ref GeminiModel
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref AnnotationSecurityGroupId
+        SubnetIds: !Ref AnnotationSubnetIds
 
   ### Thumbnail Lambda ###
   ThumbnailLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: ThumbnailLambdaFunction
-      Handler: thumbnail.thumbnail.lambda_handler
+      Handler: thumbnail.lambda_handler
       Role: !Ref LambdaExecutionRoleArn
       Runtime: python3.9
       Timeout: 60
       Code:
         S3Bucket: !Ref CodeBucket
         S3Key: !Ref ThumbnailZipKey
+      Environment:
+        Variables:
+          ANNOTATION_FUNCTION_NAME: !Ref AnnotationLambdaFunction
 
   ### Allow S3 to invoke Annotation Lambda ###
   AnnotationInvokePermission:
@@ -49,7 +95,7 @@ Resources:
       FunctionName: !Ref AnnotationLambdaFunction
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
-      SourceArn: !ImportValue ImageUploadBucketArn
+      SourceArn: !Sub arn:aws:s3:::${ImageBucketName}
 
   ### Allow S3 to invoke Thumbnail Lambda ###
   ThumbnailInvokePermission:
@@ -58,12 +104,10 @@ Resources:
       FunctionName: !Ref ThumbnailLambdaFunction
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
-      SourceArn: !ImportValue ImageUploadBucketArn
+      SourceArn: !Sub arn:aws:s3:::${ImageBucketName}
 
 Outputs:
   AnnotationLambdaArn:
     Value: !GetAtt AnnotationLambdaFunction.Arn
   ThumbnailLambdaArn:
     Value: !GetAtt ThumbnailLambdaFunction.Arn
-
-
