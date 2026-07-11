@@ -12,9 +12,18 @@ __pycache__/
 *.pkg
 
 # Lambda layer / vendored dependency build outputs
-annotation/
+lambda_build/
+annotation/*
+!annotation/
+!annotation/annotation.py
+!annotation/lambda_package/
+annotation/lambda_package/
 annotation 2/
-thumbnail/
+thumbnail/*
+!thumbnail/
+!thumbnail/thumbnail.py
+!thumbnail/lambda_package/
+thumbnail/lambda_package/
 
 # Local environment and secret files
 .env
