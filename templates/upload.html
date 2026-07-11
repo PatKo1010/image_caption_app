@@ -11,6 +11,12 @@
 <img src="data:image/jpeg;base64,{{ image_data }}" alt="Uploaded Image"
     style="max-width: 300px; border: 1px solid #ccc; padding: 5px; border-radius: 5px;">
 <p><strong>S3 URL:</strong> <a href="{{ file_url }}" target="_blank">{{ file_url }}</a></p>
+{% if caption %}
+<div style="margin-top: 12px; padding: 12px; border: 1px solid #ddd; border-radius: 5px; max-width: 640px;">
+    <strong>Caption:</strong>
+    <p style="margin-bottom: 0;">{{ caption }}</p>
+</div>
+{% endif %}
 <p><strong>Successfully Uploaded</strong></p>
 {% endif %}
 

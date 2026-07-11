@@ -1,4 +1,3 @@
-import json
 import boto3
 import pymysql
 import os
@@ -6,17 +5,15 @@ from urllib.parse import unquote_plus
 import google.generativeai as genai  # Gemini API for image captioning
 import base64  # Encoding image data for API processing
 
-# === HARDCODED DB CREDENTIALS ===
-DB_HOST = "database-1.ccgo53b5lmnh.us-east-1.rds.amazonaws.com"
-DB_USER = "admin"
-DB_PASSWORD = "P19951010"
-DB_NAME = "image_caption_db"
+DB_HOST = os.environ.get("DB_HOST", "")
+DB_USER = os.environ.get("DB_USER", "")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+DB_NAME = os.environ.get("DB_NAME", "image_caption_db")
 
-# Choose a Gemini model for generating captions
-# Configure Gemini API, REPLACE with your Gemini API key
-GOOGLE_API_KEY = "AIzaSyBuzPXvNYY4L6qBVGe-wbPYZfchCYkveSI"
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 genai.configure(api_key=GOOGLE_API_KEY)
-model = genai.GenerativeModel(model_name="gemini-2.0-pro-exp-02-05")
+model = genai.GenerativeModel(model_name=GEMINI_MODEL)
 
 # Simulated Gemini caption generator (replace with actual API call)
 def generate_image_caption(image_data):
@@ -36,7 +33,8 @@ def generate_image_caption(image_data):
         )
         return response.text if response.text else "No caption generated."
     except Exception as e:
-        return f"Error: {str(e)}"
+        print(f"Gemini caption generation failed with model {GEMINI_MODEL}: {e}")
+        raise
 
 def lambda_handler(event, context):
     # Extract bucket name and object key from the event
@@ -52,25 +50,49 @@ def lambda_handler(event, context):
     image_bytes = response['Body'].read()
 
     # Generate caption
-    caption = generate_image_caption(image_bytes)
+    try:
+        caption = generate_image_caption(image_bytes)
+        print(f"Generated caption for {image_key}: {caption[:200]}")
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": f"Caption generation failed for {image_key}: {str(e)}",
+        }
 
     # Insert caption into RDS
+    connection = None
     try:
         connection = pymysql.connect(
             host=DB_HOST,
             user=DB_USER,
             password=DB_PASSWORD,
-            database=DB_NAME
+            database=DB_NAME,
+            connect_timeout=5,
         )
         with connection.cursor() as cursor:
-            sql = "UPDATE captions SET caption = %s WHERE image_key = %s"
-            cursor.execute(sql, (caption, image_key))
+            cursor.execute(
+                "UPDATE captions SET caption = %s WHERE image_key = %s",
+                (caption, image_key),
+            )
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    "INSERT INTO captions (image_key, caption) VALUES (%s, %s)",
+                    (image_key, caption),
+                )
+                print(f"Inserted caption row for {image_key}")
+            else:
+                print(f"Updated caption row for {image_key}")
         connection.commit()
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": f"Database update failed for {image_key}: {str(e)}",
+        }
     finally:
-        connection.close()
+        if connection:
+            connection.close()
 
     return {
         "statusCode": 200,
         "body": f"Annotation for {image_key} stored successfully."
     }
-
