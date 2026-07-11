@@ -258,6 +258,7 @@ def gallery():
     Retrieves images and their captions from the database,
     generates pre-signed URLs for secure access, and renders the gallery page.
     """
+    connection = None
     try:
         connection = get_db_connection()
         if connection is None:
@@ -265,7 +266,6 @@ def gallery():
         cursor = connection.cursor(dictionary=True)
         cursor.execute("SELECT image_key, caption FROM captions ORDER BY uploaded_at DESC")
         results = cursor.fetchall()
-        connection.close()
 
         images_with_captions = [
             {
@@ -276,7 +276,10 @@ def gallery():
                 ),
                 "thumbnail_url": get_s3_client().generate_presigned_url(
                     "get_object",
-                    Params={"Bucket": S3_BUCKET, "Key": f"thumbnails/{row['image_key']}"},
+                    Params={
+                        "Bucket": S3_BUCKET,
+                        "Key": f"thumbnails/{os.path.basename(row['image_key'])}",
+                    },
                     ExpiresIn=3600,
                 ),
                 "caption": row["caption"],
@@ -289,6 +292,9 @@ def gallery():
     except Exception as e:
         app.logger.exception("Gallery query failed")
         return render_template("gallery.html", error=f"Database Error: {str(e)}")
+    finally:
+        if connection and connection.is_connected():
+            connection.close()
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
