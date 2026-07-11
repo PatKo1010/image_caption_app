@@ -45,13 +45,13 @@ def get_config_value(name, default=""):
 
 # Configure Gemini API, REPLACE with your Gemini API key
 GOOGLE_API_KEY = get_config_value("GOOGLE_API_KEY")
-GEMINI_MODEL = get_config_value("GEMINI_MODEL", "gemini-2.0-pro-exp-02-05")
+GEMINI_MODEL = get_config_value("GEMINI_MODEL", "gemini-3.5-flash")
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Choose a Gemini model for generating captions
 model = genai.GenerativeModel(model_name=GEMINI_MODEL)
 
-def generate_image_caption(image_data):
+def generate_image_caption(image_data, mime_type="image/jpeg"):
     """
     Generate a caption for an uploaded image using the Gemini API.
 
@@ -62,13 +62,14 @@ def generate_image_caption(image_data):
         encoded_image = base64.b64encode(image_data).decode("utf-8")
         response = model.generate_content(
             [
-                {"mime_type": "image/jpeg", "data": encoded_image},
+                {"mime_type": mime_type, "data": encoded_image},
                 "Caption this image.",
             ]
         )
         return response.text if response.text else "No caption generated."
     except Exception as e:
-        return f"Error: {str(e)}"
+        app.logger.exception("Gemini caption generation failed with model %s", GEMINI_MODEL)
+        raise
 
 # Flask app setup
 app = Flask(__name__)
@@ -202,10 +203,20 @@ def upload_image():
             return render_template("upload.html", error=f"S3 Upload Error: {str(e)}")
 
         # Generate caption
-        caption = generate_image_caption(file_data)
-        app.logger.info(f"caption:{caption}")
+        try:
+            caption = generate_image_caption(
+                file_data,
+                file.mimetype or "image/jpeg",
+            )
+            app.logger.info("Generated caption for %s: %s", filename, caption)
+        except Exception as e:
+            return render_template(
+                "upload.html",
+                error=f"Caption Generation Error: {str(e)}",
+            )
 
         # Save metadata to the database
+        stored_caption = caption
         try:
             connection = get_db_connection()
             if connection is None:
@@ -216,6 +227,13 @@ def upload_image():
                 (filename, caption),
             )
             connection.commit()
+            cursor.execute(
+                "SELECT caption FROM captions WHERE image_key = %s ORDER BY uploaded_at DESC LIMIT 1",
+                (filename,),
+            )
+            row = cursor.fetchone()
+            if row:
+                stored_caption = row[0]
             connection.close()
         except Exception as e:
             app.logger.exception("Database insert failed for %s", filename)
@@ -225,7 +243,12 @@ def upload_image():
         encoded_image = base64.b64encode(file_data).decode("utf-8")
         file_url = f"https://{S3_BUCKET}.s3.{S3_REGION}.amazonaws.com/{filename}"
         
-        return render_template("upload.html", image_data=encoded_image, file_url=file_url)
+        return render_template(
+            "upload.html",
+            image_data=encoded_image,
+            file_url=file_url,
+            caption=stored_caption,
+        )
 
     return render_template("upload.html")
 
@@ -249,7 +272,7 @@ def gallery():
                 "url": get_s3_client().generate_presigned_url(
                     "get_object",
                     Params={"Bucket": S3_BUCKET, "Key": row["image_key"]},
-                    ExpiresIn=3600,  # URL expires in 1 hour
+                    ExpiresIn=3600,
                 ),
                 "thumbnail_url": get_s3_client().generate_presigned_url(
                     "get_object",

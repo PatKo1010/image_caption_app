@@ -37,7 +37,7 @@ Parameters:
     Description: Gemini API key used by the annotation Lambda
   GeminiModel:
     Type: String
-    Default: gemini-2.0-pro-exp-02-05
+    Default: gemini-3.5-flash
     Description: Gemini model name used by the annotation Lambda
   AnnotationZipKey:
     Type: String
