@@ -48,6 +48,17 @@ Resources:
         - Key: Name
           Value: PublicSubnet1
 
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet2
+
   PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
@@ -103,6 +114,12 @@ Resources:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
   NatGatewayEIP:
@@ -253,6 +270,8 @@ Outputs:
     Value: !Ref VPC
   PublicSubnetId:
     Value: !Ref PublicSubnet
+  PublicSubnet2Id:
+    Value: !Ref PublicSubnet2
   PrivateSubnetId:
     Value: !Ref PrivateSubnet
   PrivateSubnet2Id:

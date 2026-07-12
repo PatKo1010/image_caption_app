@@ -20,31 +20,62 @@ Parameters:
   RdsEc2SecurityGroupId:
     Type: AWS::EC2::SecurityGroup::Id
     Description: Security group for rds ec2 instances
-  ALBSecurityGroupId:
-    Type: AWS::EC2::SecurityGroup::Id
-    Description: Security group for ALB
 
 Resources:
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to the image caption ALB
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: ImageCaptionALBSecurityGroup
+
   LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData:
-        InstanceType: t2.micro
-        KeyName: vockey
-        ImageId: ami-0c895f511524479bb  # Replace with correct AMI for your region
+        InstanceType: t3.micro
+        KeyName: imageCaptioningKey
+        ImageId: ami-0580f448a4ccdfcfb  # Replace with correct AMI for your region
         SecurityGroupIds:
           - !Ref InstanceSecurityGroupId
           - !Ref RdsEc2SecurityGroupId
         IamInstanceProfile:
-          Name: LabInstanceProfile
+          Name: Ec2UploadS3
         UserData:
           Fn::Base64: |
             #!/bin/bash
-            cd /home/ec2-user/environment/Image-caption-app-V1.1
-            sudo yum update -y
-            sudo yum install python3-pip -y
-            pip3 install flask boto3 mysql-connector-python werkzeug
-            nohup python3 app.py > app.log 2>&1 &
+            set -e
+
+            APP_DIR=/home/ec2-user/image_caption_app
+            LOG_DIR=$APP_DIR/logs
+
+            yum update -y
+            yum install -y python3-pip
+
+            runuser -l ec2-user -c "python3 -m pip install --user \
+              flask \
+              boto3 \
+              gunicorn \
+              mysql-connector-python \
+              werkzeug \
+              google-generativeai"
+
+            mkdir -p $LOG_DIR
+            chown -R ec2-user:ec2-user $LOG_DIR
+
+            cd $APP_DIR
+            pkill -f "gunicorn.*app:app" || true
+            runuser -l ec2-user -c "cd $APP_DIR && nohup python3 -m gunicorn -w 2 -b 0.0.0.0:5000 app:app > $LOG_DIR/gunicorn.log 2>&1 &"
 
   ALB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -52,7 +83,7 @@ Resources:
       Subnets: 
         - !Ref PublicSubnetId
         - !Ref PublicSubnetId2
-      SecurityGroups: [!Ref ALBSecurityGroupId]
+      SecurityGroups: [!Ref ALBSecurityGroup]
       Scheme: internet-facing
 
   ALBTargetGroup:
@@ -92,3 +123,5 @@ Resources:
 Outputs:
   LoadBalancerURL:
     Value: !GetAtt ALB.DNSName
+  ALBSecurityGroupId:
+    Value: !Ref ALBSecurityGroup
